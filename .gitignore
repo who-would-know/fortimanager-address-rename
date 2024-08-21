@@ -1,8 +1,0 @@
-.gitignore
-mainLOG.txt
-ERRORlog.txt
-att.ico
-build
-fmg-address-rename.spec
-dist/mainLOG.txt
-dist/ERRORlog.txt
