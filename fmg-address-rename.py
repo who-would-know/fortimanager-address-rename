@@ -25,6 +25,8 @@ default_hostIP = '192.168.1.1'
 default_hostADMIN = 'script_user'
 default_hostPASSWD = 'pass'
 default_fgtDEVname = 'fwcluster-fw03'
+default_userOPTION = '1'
+adomNAME = ''
 
 ### Start Logging
 # Remove previous log files and create a new files
@@ -391,7 +393,43 @@ def update_address(adom, addrLIST):
         workspace_commit(adom)
         # Unlock ADOM
         workspace_unlock(adom)
-    
+
+# Check ADOM exists
+def check_adom(adom):
+    json_url = "dvmdb/adom/" + adom
+    body = {
+    "id": 1,
+        "method": "get",
+        "params":[  {
+               "url": json_url,
+        }],
+        "session": session
+    }
+    print(f'<-- Checking ADOM {adom}')    
+    # Test HTTPS connection to host then Capture and output any errors
+    try:
+        r = requests.post(url, json=body, verify=False)
+    except requests.exceptions.RequestException as e:
+        print('<--!!!ERROR!!! Connection to FMG failed, please check FMG connection and try again, existing...') 
+        print (SystemError(e))
+        time.sleep(5)
+        # Exit Program, Connection was not Successful
+        sys.exit(1)
+    # Save JSON response from FortiManager
+    json_resp = json.loads(r.text)
+    # Check if User & Passwd was valid, no code -11 means invalid
+    if json_resp['result'][0]['status']['code'] == 0:
+        print(f'<-- Verified ADOM {adom} exists\n')
+    else:
+        print (f'<--!!!ERROR!!! ADOM not found! {adom}, please try again, exiting...')
+        # HTTP & JSON code & message
+        print ('<-- HTTPcode: %d JSONmesg: %s' % (r.status_code, json_resp['result'][0]['status']['message']))
+        print
+        time.sleep(5)
+        # Exit Program
+        sys.exit(1)
+
+
 ##########
 #### MAIN
 ##########
@@ -426,13 +464,25 @@ def main():
     secret = '*' * hostPASSWDlength
     print ('    Using: %s' % secret)
 
-    print(f'FortiGate device name as seen in FMG device mgr tab? (default: {default_fgtDEVname}): ')
-    fgtDEVname = input()
-    if fgtDEVname == '':
-        fgtDEVname = default_fgtDEVname
-    print ('    Using: %s' % fgtDEVname)
-    # Check with user on above input before starting
-    continue_script()
+    # Option for user
+    while (default_userOPTION := input("\nPlease select from the following options: (type 1 or 2) \n 1) Rename Addresses for one ADOM \n 2) Rename Addresses for multiple ADOMs based on the FortiGate Cluster Device Name\n ")).strip() not in ["1", "2"]:
+        print("\nInvalid option. Please try again.")
+    print(f"You selected option {default_userOPTION}\n")
+
+    # Selected option from user
+    match default_userOPTION:
+        case "1":
+                while (adomNAME := input("Please enter ADOM name as need in FMG:\n")).strip() == "":  
+                    print("ADOM name cannot be empty. Please try again.\n")
+                continue_script()
+        case "2":
+                print(f'FortiGate device name as seen in FMG device mgr tab? (default: {default_fgtDEVname}): ')
+                fgtDEVname = input()
+                if fgtDEVname == '':
+                    fgtDEVname = default_fgtDEVname
+                print ('    Using: %s' % fgtDEVname)
+                # Check with user on above input before starting
+                continue_script()
         
     ### Log into FMG
     print
@@ -443,23 +493,36 @@ def main():
     ### FMG Login
     fmg_login(hostADMIN, hostPASSWD, hostIP)
 
-    # Get ADOM list based on FortiGate Device
-    get_adom(fgtDEVname)
-    print ("\n")
-    print(f"<-- Found following ADOM(s) for FortiGate Device {fgtDEVname}:") 
-    for myadom in adomLIST:
-        print(myadom)
-    continue_script()
+    match default_userOPTION:
+        case "1":
+            # Check ADOM exists
+            check_adom(adomNAME)
+            # Get addresses, update addresses, main function logic
+            addressNAMELIST = []
+            print(f"<-- Checking ADOM: {adomNAME} for Address Objects that need formatting.")
+            addressNAMELIST = get_address(adomNAME)
+            if addressNAMELIST:
+                update_address(adomNAME, addressNAMELIST)
+            else:
+                print(f"<--!!! No Address Object needing formatting found in ADOM: {adomNAME} \n")
+        case "2":
+            # Get ADOM list based on FortiGate Device
+            get_adom(fgtDEVname)
+            print ("\n")
+            print(f"<-- Found following ADOM(s) for FortiGate Device {fgtDEVname}:") 
+            for myadom in adomLIST:
+                print(myadom)
+            continue_script()
 
-    # Get addresses, update addresses, main function logic
-    addressNAMELIST = []
-    for myadom in adomLIST:
-        print(f"<-- Checking ADOM: {myadom} for Address Objects that need formatting.")
-        addressNAMELIST = get_address(myadom)
-        if addressNAMELIST:
-            update_address(myadom, addressNAMELIST)
-        else:
-            print(f"<--!!! No Address Object needing formatting found in ADOM: {myadom} \n")
+            # Get addresses, update addresses, main function logic
+            addressNAMELIST = []
+            for myadom in adomLIST:
+                print(f"<-- Checking ADOM: {myadom} for Address Objects that need formatting.")
+                addressNAMELIST = get_address(myadom)
+                if addressNAMELIST:
+                    update_address(myadom, addressNAMELIST)
+                else:
+                    print(f"<--!!! No Address Object needing formatting found in ADOM: {myadom} \n")
             
     ## Logout
     fmg_logout(hostIP)
